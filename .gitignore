@@ -42,3 +42,9 @@ bin/
 .DS_Store
 # Project exclude paths
 /.intellijPlatform/
+/CLAUDE.md
+/.idea/.gitignore
+/.idea/gradle.xml
+/.idea/kotlinc.xml
+/.idea/misc.xml
+/.idea/vcs.xml
