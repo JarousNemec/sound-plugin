@@ -5,25 +5,61 @@
 
     <!-- Public plugin name should be written in Title Case.
          Guidelines: https://plugins.jetbrains.com/docs/marketplace/best-practices-for-listing.html#plugin-name -->
-    <name>Sound-plugin</name>
+    <name>SoundPlugin</name>
 
     <!-- A displayed Vendor name or Organization ID displayed on the Plugins Page. -->
-    <vendor url="https://www.yourcompany.com">YourCompany</vendor>
+    <vendor>cz.jarda</vendor>
 
     <!-- Description of the plugin displayed on the Plugin Page and IDE Plugin Manager.
          Guidelines: https://plugins.jetbrains.com/docs/marketplace/best-practices-for-listing.html#plugin-description -->
     <description><![CDATA[
-        Enter short description for your plugin here.<br>
-        <em>most HTML tags may be used</em>
+        Plays sound effects in response to IDE events &mdash; action invocations, build finished,
+        run process terminated, tests passed/failed, VCS commit, notifications and more.<br><br>
+        Ships with a bundled soundpack and lets you create, customize and share your own soundpacks.
+        Designed to never block the EDT and never crash the IDE: every sound is played off the
+        event-dispatch thread with full error isolation.
     ]]></description>
 
     <!-- Product and plugin compatibility requirements.
          Read more: https://plugins.jetbrains.com/docs/intellij/plugin-compatibility.html -->
     <depends>com.intellij.modules.platform</depends>
 
-    <!-- Extension points defined by the plugin.
-         Read more: https://plugins.jetbrains.com/docs/intellij/plugin-extension-points.html -->
-    <extensions defaultExtensionNs="com.intellij">
+    <!-- Build (compilation) events live in the Java plugin. Optional so the plugin still works in
+         non-Java IDEs; the build listener is declared in the companion config file. -->
+    <depends optional="true" config-file="soundplugin-java.xml">com.intellij.java</depends>
 
+    <!-- Services are registered via the @Service annotation (light services); do not also list
+         them here or they would be registered twice. -->
+    <extensions defaultExtensionNs="com.intellij">
+        <postStartupActivity implementation="cz.jarda.soundplugin.util.SoundPluginStartup"/>
+
+        <checkinHandlerFactory implementation="cz.jarda.soundplugin.listeners.VcsCommitHandlerFactory"/>
+
+        <applicationConfigurable parentId="tools"
+                                 id="cz.jarda.soundplugin.settings"
+                                 displayName="SoundPlugin"
+                                 instance="cz.jarda.soundplugin.settings.SoundConfigurable"/>
     </extensions>
+
+    <applicationListeners>
+        <listener class="cz.jarda.soundplugin.listeners.ActionSoundListener"
+                  topic="com.intellij.openapi.actionSystem.ex.AnActionListener"/>
+        <listener class="cz.jarda.soundplugin.listeners.FileSavedSoundListener"
+                  topic="com.intellij.openapi.fileEditor.FileDocumentManagerListener"/>
+        <listener class="cz.jarda.soundplugin.listeners.ProjectLifecycleSoundListener"
+                  topic="com.intellij.openapi.project.ProjectManagerListener"/>
+        <listener class="cz.jarda.soundplugin.listeners.AppActivationSoundListener"
+                  topic="com.intellij.openapi.application.ApplicationActivationListener"/>
+    </applicationListeners>
+
+    <projectListeners>
+        <listener class="cz.jarda.soundplugin.listeners.ExecutionSoundListener"
+                  topic="com.intellij.execution.ExecutionListener"/>
+        <listener class="cz.jarda.soundplugin.listeners.TestSoundListener"
+                  topic="com.intellij.execution.testframework.sm.runner.SMTRunnerEventsListener"/>
+        <listener class="cz.jarda.soundplugin.listeners.IndexingSoundListener"
+                  topic="com.intellij.openapi.project.DumbService$DumbModeListener"/>
+        <listener class="cz.jarda.soundplugin.listeners.DebugSoundListener"
+                  topic="com.intellij.xdebugger.XDebuggerManagerListener"/>
+    </projectListeners>
 </idea-plugin>

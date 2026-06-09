@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "id": "stronghold-classic",
+  "name": "Stronghold 1 Classic",
+  "author": "SoundPlugin",
+  "description": "Bundled default soundpack. Placeholder tones are generated on first run; drop your own WAV files into sounds/ to customize.",
+  "version": "1.0.0",
+  "defaultMappings": [
+    { "eventId": "build.finished.success", "soundFile": "sounds/build_ok.wav", "volume": 80 },
+    { "eventId": "build.finished.failed", "soundFile": "sounds/build_fail.wav", "volume": 90 },
+    { "eventId": "run.process.terminated.success", "soundFile": "sounds/run_ok.wav", "volume": 75 },
+    { "eventId": "run.process.terminated", "soundFile": "sounds/run_fail.wav", "volume": 85 },
+    { "eventId": "test.finished.passed", "soundFile": "sounds/test_pass.wav", "volume": 75 },
+    { "eventId": "test.finished.failed", "soundFile": "sounds/test_fail.wav", "volume": 90 },
+    { "eventId": "vcs.commit.completed", "soundFile": "sounds/commit.wav", "volume": 70 },
+    { "eventId": "notification.shown.error", "soundFile": "sounds/notify_error.wav", "volume": 80 }
+  ]
+}

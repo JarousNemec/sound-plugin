@@ -21,9 +21,13 @@ dependencies {
         create("IC", "2023.1.7")
         testFramework(org.jetbrains.intellij.platform.gradle.TestFrameworkType.Platform)
 
-        // Add necessary plugin dependencies for compilation here, example:
-        // bundledPlugin("com.intellij.java")
+        // Java plugin provides CompilationStatusListener (build events). It is an
+        // optional dependency at runtime (see plugin.xml), but needed at compile time.
+        bundledPlugin("com.intellij.java")
     }
+
+    // JUnit 4 for both plain unit tests and the platform test fixtures.
+    testImplementation("junit:junit:4.13.2")
 }
 
 intellijPlatform {

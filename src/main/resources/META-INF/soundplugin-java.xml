@@ -1,0 +1,8 @@
+<!-- Loaded only when com.intellij.java is present (optional dependency in plugin.xml).
+     Registers the build/compilation listener, whose API lives in the Java plugin. -->
+<idea-plugin>
+    <projectListeners>
+        <listener class="cz.jarda.soundplugin.listeners.BuildSoundListener"
+                  topic="com.intellij.openapi.compiler.CompilationStatusListener"/>
+    </projectListeners>
+</idea-plugin>
