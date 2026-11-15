@@ -55,3 +55,27 @@ kotlin {
         jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17)
     }
 }
+
+// ---- Demo soundpack generator (dev tool, not shipped in the plugin) ----
+// Renders src/soundgen/.../DemoSoundCatalog.kt through the JDK's Gervill MIDI synth into
+// src/main/resources/soundpacks/demo-midi (WAV + soundpack.json) and src/soundgen/midi (.mid).
+val soundgen: SourceSet by sourceSets.creating
+
+dependencies {
+    // The Kotlin stdlib is not added automatically (kotlin.stdlib.default.dependency=false).
+    "soundgenImplementation"(kotlin("stdlib"))
+}
+
+val generateDemoSounds by tasks.registering(JavaExec::class) {
+    group = "soundplugin"
+    description = "Regenerates the bundled demo-midi soundpack (WAV, MIDI sources, manifest)."
+    classpath = soundgen.runtimeClasspath
+    mainClass.set("cz.jarda.soundplugin.soundgen.GenerateDemoPackKt")
+    // Offline rendering uses AudioSynthesizer.openStream from a non-exported JDK package.
+    jvmArgs("--add-opens=java.desktop/com.sun.media.sound=ALL-UNNAMED")
+    args(
+        layout.projectDirectory.dir("src/main/resources/soundpacks/demo-midi").asFile.absolutePath,
+        layout.projectDirectory.dir("src/soundgen/midi").asFile.absolutePath,
+    )
+    providers.gradleProperty("soundfont").orNull?.let { args("--soundfont", it) }
+}

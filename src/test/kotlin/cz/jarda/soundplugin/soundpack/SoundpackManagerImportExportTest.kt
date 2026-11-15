@@ -15,9 +15,9 @@ class SoundpackManagerImportExportTest : BasePlatformTestCase() {
         mgr.soundpacksRoot = Files.createTempDirectory("packs-unpack")
         mgr.initialize()
 
-        val pack = mgr.getActive(SoundpackManager.BUNDLED_ID)
+        val pack = mgr.getActive(SoundpackManager.STRONGHOLD_PACK_ID)
         assertNotNull("bundled pack should load", pack)
-        assertEquals(SoundpackManager.BUNDLED_ID, pack!!.id)
+        assertEquals(SoundpackManager.STRONGHOLD_PACK_ID, pack!!.id)
         assertEquals("all 8 placeholder tones should be generated", 8, pack.availableSoundFiles.size)
         assertFalse("bundled default mappings should resolve to real files", pack.manifest.defaultMappings.isEmpty())
     }
@@ -26,7 +26,7 @@ class SoundpackManagerImportExportTest : BasePlatformTestCase() {
         val sourceRoot = Files.createTempDirectory("packs-src")
         val source = SoundpackManager().apply { soundpacksRoot = sourceRoot }
         source.initialize()
-        val pack = source.getActive(SoundpackManager.BUNDLED_ID)!!
+        val pack = source.getActive(SoundpackManager.STRONGHOLD_PACK_ID)!!
 
         // A user override that changes one mapping's sound + volume.
         val overrides = mapOf(
@@ -57,8 +57,8 @@ class SoundpackManagerImportExportTest : BasePlatformTestCase() {
         val root = Files.createTempDirectory("packs-collide")
         val mgr = SoundpackManager().apply { soundpacksRoot = root }
         mgr.initialize()
-        assertTrue(mgr.packExists(SoundpackManager.BUNDLED_ID))
-        val free = mgr.suggestFreeId(SoundpackManager.BUNDLED_ID)
-        assertEquals("${SoundpackManager.BUNDLED_ID}-2", free)
+        assertTrue(mgr.packExists(SoundpackManager.STRONGHOLD_PACK_ID))
+        val free = mgr.suggestFreeId(SoundpackManager.STRONGHOLD_PACK_ID)
+        assertEquals("${SoundpackManager.STRONGHOLD_PACK_ID}-2", free)
     }
 }

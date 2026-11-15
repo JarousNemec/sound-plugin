@@ -74,7 +74,7 @@ class SoundSettingsState : PersistentStateComponent<SoundSettingsState.State> {
     }
 
     companion object {
-        const val DEFAULT_SOUNDPACK_ID = "stronghold-classic"
+        const val DEFAULT_SOUNDPACK_ID = cz.jarda.soundplugin.soundpack.SoundpackManager.DEFAULT_PACK_ID
 
         @JvmStatic
         fun getInstance(): SoundSettingsState =

@@ -60,7 +60,7 @@ class SoundpackManager {
     /** The active pack per settings, falling back to the bundled pack, then any pack. */
     @Synchronized
     fun getActive(activeId: String): Soundpack? =
-        loaded[activeId] ?: loaded[BUNDLED_ID] ?: loaded.values.firstOrNull()
+        loaded[activeId] ?: loaded[DEFAULT_PACK_ID] ?: loaded.values.firstOrNull()
 
     private fun loadPack(dir: Path): Soundpack? {
         val manifestFile = dir.resolve(Soundpack.MANIFEST_FILE)
@@ -116,23 +116,69 @@ class SoundpackManager {
     // ---- bundled pack unpacking ----
 
     private fun unpackBundledIfNeeded() {
-        val target = soundpacksRoot.resolve(BUNDLED_ID)
-        val manifestTarget = target.resolve(Soundpack.MANIFEST_FILE)
-        if (!manifestTarget.exists()) {
-            Files.createDirectories(target)
-            val resource = javaClass.getResourceAsStream("$BUNDLED_RESOURCE_DIR/${Soundpack.MANIFEST_FILE}")
-                ?: error("bundled $BUNDLED_RESOURCE_DIR/${Soundpack.MANIFEST_FILE} missing from plugin classpath")
-            resource.use { Files.copy(it, manifestTarget) }
+        for (bundled in BUNDLED_PACKS) {
+            SafeRunner.run("unpacking bundled pack ${bundled.id}") { unpackBundled(bundled) }
         }
-        // (Re)generate any missing placeholder tones referenced by the bundled pack.
-        val soundsDir = target.resolve(Soundpack.SOUNDS_DIR)
-        for (tone in ToneGenerator.BUNDLED_TONES) {
-            val file = soundsDir.resolve(tone.fileName)
-            if (!file.exists()) {
-                SafeRunner.run("generating tone ${tone.fileName}") { ToneGenerator.write(tone, file) }
+    }
+
+    /**
+     * Copies one bundled pack from the plugin classpath into [soundpacksRoot]. A jar cannot be
+     * listed, so the files to copy are taken from the bundled manifest's mappings. When the
+     * installed manifest's `version` differs from the bundled one, the manifest and all bundled
+     * sound files are overwritten so plugin updates reach existing installs; otherwise only
+     * missing files are restored and user edits are kept.
+     */
+    private fun unpackBundled(bundled: BundledPack) {
+        val resourceDir = "/soundpacks/${bundled.id}"
+        val manifestBytes = javaClass.getResourceAsStream("$resourceDir/${Soundpack.MANIFEST_FILE}")?.use { it.readBytes() }
+            ?: error("bundled $resourceDir/${Soundpack.MANIFEST_FILE} missing from plugin classpath")
+        val bundledManifest = gson.fromJson(String(manifestBytes, Charsets.UTF_8), SoundpackManifest::class.java)
+
+        val target = soundpacksRoot.resolve(bundled.id)
+        val manifestTarget = target.resolve(Soundpack.MANIFEST_FILE)
+        val installedVersion = if (manifestTarget.exists()) {
+            SafeRunner.compute("reading installed manifest of ${bundled.id}", null) {
+                Files.newBufferedReader(manifestTarget).use { gson.fromJson(it, SoundpackManifest::class.java) }?.version
+            }
+        } else null
+        val upToDate = installedVersion == bundledManifest.version
+
+        if (!upToDate) {
+            if (installedVersion != null) {
+                log.info("SoundPlugin: updating bundled pack '${bundled.id}' $installedVersion -> ${bundledManifest.version}")
+            }
+            Files.createDirectories(target)
+            Files.write(manifestTarget, manifestBytes)
+        }
+
+        for (soundFile in bundledManifest.defaultMappings.map { it.soundFile }.distinct()) {
+            val file = target.resolve(soundFile).normalize()
+            if (!file.startsWith(target)) continue
+            if (upToDate && file.exists()) continue
+            // Packs with generated placeholders (stronghold) ship no audio in resources.
+            val resource = javaClass.getResourceAsStream("$resourceDir/$soundFile") ?: continue
+            SafeRunner.run("unpacking $soundFile of ${bundled.id}") {
+                resource.use {
+                    Files.createDirectories(file.parent)
+                    Files.copy(it, file, java.nio.file.StandardCopyOption.REPLACE_EXISTING)
+                }
+            }
+        }
+
+        if (bundled.generatePlaceholderTones) {
+            // (Re)generate any missing placeholder tones referenced by the pack.
+            val soundsDir = target.resolve(Soundpack.SOUNDS_DIR)
+            for (tone in ToneGenerator.BUNDLED_TONES) {
+                val file = soundsDir.resolve(tone.fileName)
+                if (!file.exists()) {
+                    SafeRunner.run("generating tone ${tone.fileName}") { ToneGenerator.write(tone, file) }
+                }
             }
         }
     }
+
+    /** A soundpack shipped inside the plugin under `/soundpacks/<id>/`. */
+    private class BundledPack(val id: String, val generatePlaceholderTones: Boolean)
 
     // ---- import ----
 
@@ -235,8 +281,16 @@ class SoundpackManager {
     }
 
     companion object {
-        const val BUNDLED_ID = "stronghold-classic"
-        private const val BUNDLED_RESOURCE_DIR = "/soundpacks/stronghold-classic"
+        /** The bundled pack active by default (rendered MIDI cues for every event). */
+        const val DEFAULT_PACK_ID = "demo-midi"
+
+        /** The bundled Stronghold pack; until real samples exist it holds generated placeholder tones. */
+        const val STRONGHOLD_PACK_ID = "stronghold-classic"
+
+        private val BUNDLED_PACKS = listOf(
+            BundledPack(DEFAULT_PACK_ID, generatePlaceholderTones = false),
+            BundledPack(STRONGHOLD_PACK_ID, generatePlaceholderTones = true),
+        )
 
         private val LIFECYCLE_PREFIXES = listOf(
             "build.", "run.", "debug.", "test.", "vcs.", "indexing.", "notification.",
