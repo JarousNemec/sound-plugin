@@ -30,6 +30,20 @@ Zkratky platí pro výchozí Windows keymapu IntelliJ IDEA 2023.1.
 - **Debounce 120 ms**: stejná událost se během 120 ms přehraje jen jednou. Rychlé Ctrl+C Ctrl+C tedy cvakne jednou.
 - **Tlačítko Test**: sloupec **▶ Test** v tabulce nastavení přehraje zvuk bez vyvolání události. Hodí se na rychlé poslechnutí celého packu. Obchází master switch, globální hlasitost i debounce.
 
+**Ladění, když něco nehraje:**
+1. V *Tools → SoundPlugin* zapni **Verbose logging**, dej *Apply* a vyvolej událost.
+2. Tlačítkem **Show idea.log** otevřeš složku s logem. Hledej řádky začínající `[SoundPlugin]`.
+3. Co v logu najdeš:
+   - Každá událost a akce má řádek s výsledkem, buď `-> soubor.wav (…, gain −X dB)`, nebo `silent: <důvod>`. Důvodem je třeba `no sound mapped`, `debounced` nebo `disabled by user override`.
+   - Když zvuk přebije jiný, uvidíš `cut after N ms by '…'` nebo `superseded`.
+   - U každého přehrání je čas od události po start zvuku a jak dlouho trvalo čtení souboru, `getClip` a `open`.
+   - Když pro událost **žádný řádek není**, IDE ji pluginu vůbec neposlalo, takže chyba je v listeneru nebo v API.
+4. Pozor, když verbose zapneš, plugin zaloguje i každou nenamapovanou akci (šipky, Enter…), aby šlo zjistit id akce, kterou chceš ozvučit. Po ladění ho zase vypni.
+5. Bez verbose plugin loguje jen:
+   - souhrn při startu (packy, aktivní pack, hlasitost, audio zařízení),
+   - varování, když zpracování události trvá na EDT déle než 15 ms (`handling … took`),
+   - varování, když zvuk začne hrát déle než 150 ms po události (`started … ms after the event`).
+
 **Styl packu:** všechno je v D dur a hrají jen drnkací a úderové nástroje s přirozeným doznívání. Každá skupina událostí má vlastní barvu zvuku, ať se dají poznat i tiché jednonotové zvuky:
 
 | Nástroj | Skupina |

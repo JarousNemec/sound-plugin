@@ -7,6 +7,7 @@ import com.intellij.openapi.components.State
 import com.intellij.openapi.components.Storage
 import com.intellij.util.xmlb.XmlSerializerUtil
 import com.intellij.util.xmlb.annotations.MapAnnotation
+import cz.jarda.soundplugin.util.SoundLog
 
 /**
  * Local IDE settings (PRD §6.2). Persisted to `soundPlugin.xml` and roamed via Settings Sync.
@@ -25,6 +26,9 @@ class SoundSettingsState : PersistentStateComponent<SoundSettingsState.State> {
 
         var activeSoundpackId: String = DEFAULT_SOUNDPACK_ID
 
+        /** Verbose per-event logging to idea.log (see SoundLog). */
+        var debugLogging: Boolean = false
+
         @get:MapAnnotation(surroundWithTag = false, entryTagName = "override", keyAttributeName = "eventId")
         var overrides: MutableMap<String, MappingOverride> = mutableMapOf()
     }
@@ -35,6 +39,7 @@ class SoundSettingsState : PersistentStateComponent<SoundSettingsState.State> {
 
     override fun loadState(loaded: State) {
         XmlSerializerUtil.copyBean(loaded, state)
+        SoundLog.verboseEnabled = state.debugLogging
     }
 
     // ---- Convenience accessors ----
@@ -55,6 +60,13 @@ class SoundSettingsState : PersistentStateComponent<SoundSettingsState.State> {
         get() = state.activeSoundpackId
         set(value) {
             state.activeSoundpackId = value
+        }
+
+    var debugLogging: Boolean
+        get() = state.debugLogging
+        set(value) {
+            state.debugLogging = value
+            SoundLog.verboseEnabled = value
         }
 
     val overrides: MutableMap<String, MappingOverride>

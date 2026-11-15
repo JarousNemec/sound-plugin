@@ -7,6 +7,7 @@ import com.intellij.openapi.diagnostic.Logger
 import com.intellij.util.concurrency.AppExecutorUtil
 import cz.jarda.soundplugin.events.SoundRequest
 import cz.jarda.soundplugin.util.SafeRunner
+import cz.jarda.soundplugin.util.SoundLog
 import java.io.ByteArrayInputStream
 import java.io.IOException
 import java.util.concurrent.ExecutorService
@@ -41,12 +42,19 @@ class SoundPlayerService : Disposable {
     private val executor: ExecutorService =
         AppExecutorUtil.createBoundedApplicationPoolExecutor("SoundPlugin-Player", 1)
 
+    /** A request waiting for the playback thread, with the time it was submitted. */
+    private class Pending(val request: SoundRequest, val submittedNanos: Long)
+
     /** The single pending request slot. A newer request overwrites an older un-started one. */
-    private val pending = AtomicReference<SoundRequest?>(null)
+    private val pending = AtomicReference<Pending?>(null)
 
     /** The currently open/playing clip, accessed only from the playback thread. */
     @Volatile
     private var currentClip: Clip? = null
+
+    /** Event id and start time of [currentClip], for logging cut-offs (playback thread only). */
+    private var currentEventId: String? = null
+    private var currentStartedNanos: Long = 0
 
     @Volatile
     private var disposed = false
@@ -69,44 +77,89 @@ class SoundPlayerService : Disposable {
      */
     fun play(request: SoundRequest) {
         if (disposed) return
-        pending.set(request)
+        val previous = pending.getAndSet(Pending(request, System.nanoTime()))
+        if (previous != null) {
+            SoundLog.trace { "'${previous.request.eventId}' dropped before it started: superseded by '${request.eventId}' (last wins)" }
+        }
         SafeRunner.run("SoundPlayerService.play submit") {
             executor.execute { drain() }
         }
     }
 
-    private fun drain() {
-        // Take the most recent pending request; older queued drain() calls find nothing to do.
-        val request = pending.getAndSet(null) ?: return
-        SafeRunner.run("SoundPlayerService.drain") {
-            stopCurrent()
-            if (!disposed) startPlaying(request)
+    /**
+     * Opens the audio system once in the background so the first real sound is not delayed by
+     * driver initialisation, and logs which output devices Java Sound sees.
+     */
+    fun warmUp() {
+        if (disposed) return
+        SafeRunner.run("SoundPlayerService.warmUp submit") {
+            executor.execute {
+                SafeRunner.run("audio warm-up") {
+                    val start = System.nanoTime()
+                    val mixers = AudioSystem.getMixerInfo().joinToString { "'${it.name}'" }
+                    val clip = AudioSystem.getClip()
+                    val clipMs = SoundLog.msSince(start)
+                    clip.close()
+                    SoundLog.info("audio ready in $clipMs ms; mixers: $mixers")
+                }
+            }
         }
     }
 
-    private fun startPlaying(request: SoundRequest) {
+    private fun drain() {
+        // Take the most recent pending request; older queued drain() calls find nothing to do.
+        val next = pending.getAndSet(null) ?: return
+        SafeRunner.run("SoundPlayerService.drain") {
+            stopCurrent(next.request.eventId)
+            if (!disposed) startPlaying(next.request, next.submittedNanos)
+        }
+    }
+
+    private fun startPlaying(request: SoundRequest, submittedNanos: Long) {
+        val queuedMs = SoundLog.msSince(submittedNanos)
         val bytes: ByteArray
+        val readStart = System.nanoTime()
         try {
             bytes = cache.get(request.absolutePath)
         } catch (e: IOException) {
             reportFileError(request, "reading sound file", e)
             return
         }
+        val readMs = SoundLog.msSince(readStart)
 
         var clip: Clip? = null
         try {
             val stream = AudioSystem.getAudioInputStream(ByteArrayInputStream(bytes))
+            val getClipStart = System.nanoTime()
             val newClip = AudioSystem.getClip()
+            val getClipMs = SoundLog.msSince(getClipStart)
             clip = newClip
             newClip.addLineListener { event ->
                 if (event.type == LineEvent.Type.STOP) {
                     SafeRunner.run("closing clip on STOP") { newClip.close() }
                 }
             }
+            val openStart = System.nanoTime()
             newClip.open(stream)
+            val openMs = SoundLog.msSince(openStart)
             applyVolume(newClip, request.effectiveVolume)
             currentClip = newClip
+            currentEventId = request.eventId
+            currentStartedNanos = System.nanoTime()
             newClip.start()
+
+            val totalNanos = System.nanoTime() - submittedNanos
+            SoundLog.trace {
+                "playing '${request.eventId}' (${request.absolutePath.fileName}, ${newClip.microsecondLength / 1000} ms): " +
+                    "started ${SoundLog.msSince(submittedNanos)} ms after the event " +
+                    "[queue $queuedMs, read $readMs, getClip $getClipMs, open $openMs ms]"
+            }
+            if (totalNanos > SLOW_START_MS * 1_000_000) {
+                SoundLog.warnThrottled("slow-start") {
+                    "'${request.eventId}' started ${totalNanos / 1_000_000} ms after the event " +
+                        "[queue $queuedMs, read $readMs, getClip $getClipMs, open $openMs ms]; the audio device is slow to open"
+                }
+            }
         } catch (e: UnsupportedAudioFileException) {
             safeClose(clip)
             reportFileError(request, "decoding sound file", e)
@@ -152,11 +205,15 @@ class SoundPlayerService : Disposable {
         }
     }
 
-    private fun stopCurrent() {
+    private fun stopCurrent(replacedBy: String? = null) {
         val clip = currentClip ?: return
         currentClip = null
         SafeRunner.run("stopping current clip") {
-            if (clip.isRunning) clip.stop()
+            if (clip.isRunning) {
+                val playedMs = (System.nanoTime() - currentStartedNanos) / 1_000_000
+                SoundLog.trace { "'$currentEventId' cut after $playedMs ms" + (replacedBy?.let { " by '$it' (last wins)" } ?: "") }
+                clip.stop()
+            }
             clip.close()
         }
     }
@@ -167,14 +224,14 @@ class SoundPlayerService : Disposable {
     }
 
     private fun reportFileError(request: SoundRequest, what: String, e: Throwable) {
-        log.warn("SoundPlugin: $what failed for '${request.absolutePath}' (event ${request.eventId}); deactivating mapping", e)
+        log.warn("[SoundPlugin] $what failed for '${request.absolutePath}' (event ${request.eventId}); deactivating mapping", e)
         SafeRunner.run("notifying file error") { onFileError?.invoke(request) }
     }
 
     private fun logDeviceWarningOnce(e: Throwable) {
         if (deviceWarningLogged) return
         deviceWarningLogged = true
-        log.warn("SoundPlugin: audio device unavailable; sounds will stay silent until it recovers", e)
+        log.warn("[SoundPlugin] audio device unavailable; sounds will stay silent until it recovers", e)
     }
 
     override fun dispose() {
@@ -195,6 +252,9 @@ class SoundPlayerService : Disposable {
 
     companion object {
         private val LN_10 = ln(10.0)
+
+        /** From event to audible start; anything slower is reported (throttled). */
+        const val SLOW_START_MS = 150L
 
         @JvmStatic
         fun getInstance(): SoundPlayerService =

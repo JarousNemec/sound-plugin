@@ -37,7 +37,7 @@ object SafeRunner {
     fun report(context: String, t: Throwable) {
         // Never let logging itself bring anything down.
         try {
-            LOG.warn("SoundPlugin: suppressed error during '$context'", t)
+            LOG.warn("[SoundPlugin] suppressed error during '$context'", t)
         } catch (ignored: Throwable) {
             // nothing we can safely do here
         }

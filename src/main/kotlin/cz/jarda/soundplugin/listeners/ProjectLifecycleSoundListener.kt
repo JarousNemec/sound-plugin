@@ -6,15 +6,11 @@ import cz.jarda.soundplugin.events.Events
 import cz.jarda.soundplugin.events.SoundEventRouter
 import cz.jarda.soundplugin.util.SafeRunner
 
-/** Fires project open/close events (PRD §5.2). */
+/**
+ * Fires [Events.PROJECT_CLOSED] (PRD §5.2). `project.opened` is fired by
+ * [cz.jarda.soundplugin.util.SoundPluginStartup] instead of the deprecated `projectOpened` callback.
+ */
 class ProjectLifecycleSoundListener : ProjectManagerListener {
-    @Suppress("OverridingDeprecatedMember", "DEPRECATION")
-    override fun projectOpened(project: Project) {
-        SafeRunner.run("project.opened") {
-            SoundEventRouter.getInstance().handle(Events.PROJECT_OPENED)
-        }
-    }
-
     override fun projectClosed(project: Project) {
         SafeRunner.run("project.closed") {
             SoundEventRouter.getInstance().handle(Events.PROJECT_CLOSED)

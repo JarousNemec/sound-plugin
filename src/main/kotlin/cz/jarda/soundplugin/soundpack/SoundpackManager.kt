@@ -7,6 +7,7 @@ import com.intellij.openapi.components.Service
 import com.intellij.openapi.diagnostic.Logger
 import cz.jarda.soundplugin.events.Events
 import cz.jarda.soundplugin.util.SafeRunner
+import cz.jarda.soundplugin.util.SoundLog
 import java.nio.file.Files
 import java.nio.file.Path
 import javax.sound.sampled.AudioSystem
@@ -39,15 +40,23 @@ class SoundpackManager {
 
     @Synchronized
     fun reload() {
+        val start = System.nanoTime()
         loaded.clear()
         SafeRunner.run("loading soundpacks") {
-            if (!soundpacksRoot.isDirectory()) return@run
+            if (!soundpacksRoot.isDirectory()) {
+                SoundLog.warn("soundpacks folder $soundpacksRoot does not exist; no packs loaded")
+                return@run
+            }
             Files.list(soundpacksRoot).use { stream ->
                 stream.filter { it.isDirectory() }.forEach { dir ->
                     val pack = loadPack(dir)
                     if (pack != null) loaded[pack.id] = pack
                 }
             }
+        }
+        SoundLog.trace {
+            "loaded ${loaded.size} soundpack(s) in ${SoundLog.msSince(start)} ms: " +
+                loaded.values.joinToString { "'${it.id}' (${it.manifest.defaultMappings.size} mappings)" }
         }
     }
 
@@ -65,17 +74,17 @@ class SoundpackManager {
     private fun loadPack(dir: Path): Soundpack? {
         val manifestFile = dir.resolve(Soundpack.MANIFEST_FILE)
         if (!manifestFile.exists()) {
-            log.warn("SoundPlugin: skipping '${dir.name}' — no ${Soundpack.MANIFEST_FILE}")
+            log.warn("[SoundPlugin] skipping '${dir.name}' — no ${Soundpack.MANIFEST_FILE}")
             return null
         }
         return SafeRunner.compute("parsing manifest in ${dir.name}", null) {
             val manifest = Files.newBufferedReader(manifestFile).use { gson.fromJson(it, SoundpackManifest::class.java) }
                 ?: return@compute null
             if (manifest.schemaVersion > SoundpackManifest.CURRENT_SCHEMA_VERSION) {
-                log.warn("SoundPlugin: pack '${manifest.id}' schemaVersion ${manifest.schemaVersion} is newer than supported; loading best-effort")
+                log.warn("[SoundPlugin] pack '${manifest.id}' schemaVersion ${manifest.schemaVersion} is newer than supported; loading best-effort")
             }
             if (manifest.id.isBlank()) {
-                log.warn("SoundPlugin: pack in '${dir.name}' has a blank id; skipping")
+                log.warn("[SoundPlugin] pack in '${dir.name}' has a blank id; skipping")
                 return@compute null
             }
             validateMappings(manifest, dir)
@@ -96,14 +105,14 @@ class SoundpackManager {
             // Warn (but keep) only for lifecycle-namespace ids we don't recognise; Layer-A action
             // ids are arbitrary strings and must not be flagged.
             if (looksLikeLifecycleId(m.eventId) && m.eventId !in KNOWN_EVENT_IDS) {
-                log.warn("SoundPlugin: pack '${manifest.id}' references unknown lifecycle eventId '${m.eventId}'; keeping but it will not fire")
+                log.warn("[SoundPlugin] pack '${manifest.id}' references unknown lifecycle eventId '${m.eventId}'; keeping but it will not fire")
             }
             val file = root.resolve(m.soundFile).normalize()
             val ok = SafeRunner.compute("validating ${m.soundFile}", false) {
                 file.exists() && Soundpack.isSupportedAudio(file) && AudioSystem.getAudioFileFormat(file.toFile()) != null
             }
             if (!ok) {
-                log.warn("SoundPlugin: pack '${manifest.id}' mapping for '${m.eventId}' has missing/unsupported file '${m.soundFile}'; ignoring")
+                log.warn("[SoundPlugin] pack '${manifest.id}' mapping for '${m.eventId}' has missing/unsupported file '${m.soundFile}'; ignoring")
                 iterator.remove()
             }
         }
@@ -145,12 +154,13 @@ class SoundpackManager {
 
         if (!upToDate) {
             if (installedVersion != null) {
-                log.info("SoundPlugin: updating bundled pack '${bundled.id}' $installedVersion -> ${bundledManifest.version}")
+                log.info("[SoundPlugin] updating bundled pack '${bundled.id}' $installedVersion -> ${bundledManifest.version}")
             }
             Files.createDirectories(target)
             Files.write(manifestTarget, manifestBytes)
         }
 
+        var copied = 0
         for (soundFile in bundledManifest.defaultMappings.map { it.soundFile }.distinct()) {
             val file = target.resolve(soundFile).normalize()
             if (!file.startsWith(target)) continue
@@ -161,8 +171,12 @@ class SoundpackManager {
                 resource.use {
                     Files.createDirectories(file.parent)
                     Files.copy(it, file, java.nio.file.StandardCopyOption.REPLACE_EXISTING)
+                    copied++
                 }
             }
+        }
+        if (!upToDate || copied > 0) {
+            SoundLog.info("unpacked bundled pack '${bundled.id}' v${bundledManifest.version} to $target ($copied sound file(s) copied)")
         }
 
         if (bundled.generatePlaceholderTones) {

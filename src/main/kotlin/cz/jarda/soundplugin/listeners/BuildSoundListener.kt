@@ -5,6 +5,7 @@ import com.intellij.openapi.compiler.CompileContext
 import cz.jarda.soundplugin.events.Events
 import cz.jarda.soundplugin.events.SoundEventRouter
 import cz.jarda.soundplugin.util.SafeRunner
+import cz.jarda.soundplugin.util.SoundLog
 
 /**
  * Build (compilation) events (PRD §5.2). Lives in the Java plugin's API, so this listener is only
@@ -14,6 +15,7 @@ import cz.jarda.soundplugin.util.SafeRunner
 class BuildSoundListener : CompilationStatusListener {
     override fun compilationFinished(aborted: Boolean, errors: Int, warnings: Int, compileContext: CompileContext) {
         SafeRunner.run("build.finished") {
+            SoundLog.trace { "build finished: aborted=$aborted, errors=$errors, warnings=$warnings" }
             if (aborted) return@run
             val id = if (errors > 0) Events.BUILD_FAILED else Events.BUILD_SUCCESS
             SoundEventRouter.getInstance().handle(id)

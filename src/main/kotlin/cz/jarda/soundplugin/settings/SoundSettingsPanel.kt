@@ -21,6 +21,7 @@ import cz.jarda.soundplugin.player.SoundPlayerService
 import cz.jarda.soundplugin.soundpack.Soundpack
 import cz.jarda.soundplugin.soundpack.SoundpackManager
 import cz.jarda.soundplugin.util.SafeRunner
+import cz.jarda.soundplugin.util.SoundLog
 import java.awt.BorderLayout
 import java.awt.Component
 import java.awt.Dimension
@@ -60,6 +61,7 @@ class SoundSettingsPanel {
 
     // --- global controls ---
     private val enabledCheck = JBCheckBox("Enable SoundPlugin")
+    private val verboseCheck = JBCheckBox("Verbose logging to idea.log (every event, decision and timing; lines start with ${SoundLog.PREFIX})")
     private val volumeSlider = JSlider(0, 100)
     private val volumeValueLabel = JBLabel()
     private val packCombo = JComboBox<PackItem>()
@@ -76,6 +78,7 @@ class SoundSettingsPanel {
     // --- working state ---
     private val workingOverrides = LinkedHashMap<String, MappingOverride>()
     private var initialEnabled = true
+    private var initialVerbose = false
     private var initialVolume = 70
     private var initialPackId = SoundSettingsState.DEFAULT_SOUNDPACK_ID
     private var initialOverridesSnapshot = mapOf<String, MappingOverride>()
@@ -100,6 +103,9 @@ class SoundSettingsPanel {
 
         enabledCheck.alignmentX = Component.LEFT_ALIGNMENT
         panel.add(enabledCheck)
+        panel.add(Box.createVerticalStrut(6))
+        verboseCheck.alignmentX = Component.LEFT_ALIGNMENT
+        panel.add(verboseCheck)
         panel.add(Box.createVerticalStrut(6))
 
         val volRow = JPanel(FlowLayout(FlowLayout.LEFT, 6, 0))
@@ -128,6 +134,7 @@ class SoundSettingsPanel {
         buttons.add(button("Export current soundpack…") { onExport() })
         buttons.add(button("Open soundpacks folder") { onOpenFolder() })
         buttons.add(button("Reset to soundpack defaults") { onResetDefaults() })
+        buttons.add(button("Show idea.log") { onShowLog() })
         panel.add(buttons)
 
         return panel
@@ -322,6 +329,7 @@ class SoundSettingsPanel {
             val pack = activePack() ?: return@run
             val path = pack.resolveSound(row.soundFile)
             val volume = row.volume.coerceIn(0, 100) / 100f
+            SoundLog.trace { "Test button: '${row.eventId}' -> ${row.soundFile} at ${row.volume} % (global volume and debounce bypassed)" }
             SoundPlayerService.getInstance().play(SoundRequest(row.eventId, path, volume.coerceAtLeast(0.01f)))
         }
     }
@@ -390,6 +398,14 @@ class SoundSettingsPanel {
         }
     }
 
+    private fun onShowLog() {
+        SafeRunner.run("show log") {
+            // Built-in "Help | Show Log in Explorer/Finder" action.
+            val action = ActionManager.getInstance().getAction("ShowLog") ?: return@run
+            ActionManager.getInstance().tryToExecute(action, null, root, null, true)
+        }
+    }
+
     private fun onResetDefaults() {
         workingOverrides.clear()
         rebuildLifecycleRows()
@@ -400,6 +416,7 @@ class SoundSettingsPanel {
 
     fun isModified(): Boolean {
         if (enabledCheck.isSelected != initialEnabled) return true
+        if (verboseCheck.isSelected != initialVerbose) return true
         if (volumeSlider.value != initialVolume) return true
         if (activePackId() != initialPackId) return true
         return workingOverrides != initialOverridesSnapshot
@@ -407,19 +424,27 @@ class SoundSettingsPanel {
 
     fun apply() {
         settings.enabled = enabledCheck.isSelected
+        settings.debugLogging = verboseCheck.isSelected
         settings.globalVolume = volumeSlider.value
         settings.activeSoundpackId = activePackId()
         settings.replaceOverrides(workingOverrides)
         // Retry any mappings that had been deactivated and clear debounce state.
         SafeRunner.run("clearing router deactivations") { SoundEventRouter.getInstance().clearDeactivations() }
+        SoundLog.info(
+            "settings applied: enabled=${settings.enabled}, volume=${settings.globalVolume} %, " +
+                "pack='${settings.activeSoundpackId}', overrides=${settings.overrides.size}, verbose=${settings.debugLogging}",
+        )
         snapshotInitialState()
     }
 
     fun reset() {
         // Idempotent: ensures the bundled pack is unpacked even if settings are opened before the
-        // startup activity has run.
+        // startup activity has run. Runs on the EDT, so it is timed.
+        val start = System.nanoTime()
         manager.initialize()
+        SoundLog.trace { "settings page loaded soundpacks in ${SoundLog.msSince(start)} ms" }
         enabledCheck.isSelected = settings.enabled
+        verboseCheck.isSelected = settings.debugLogging
         volumeSlider.value = settings.globalVolume
         updateVolumeLabel()
         workingOverrides.clear()
@@ -434,6 +459,7 @@ class SoundSettingsPanel {
 
     private fun snapshotInitialState() {
         initialEnabled = enabledCheck.isSelected
+        initialVerbose = verboseCheck.isSelected
         initialVolume = volumeSlider.value
         initialPackId = activePackId()
         initialOverridesSnapshot = workingOverrides.mapValues { it.value.copy() }

@@ -6,6 +6,7 @@ import com.intellij.xdebugger.XDebugSessionListener
 import cz.jarda.soundplugin.events.Events
 import cz.jarda.soundplugin.events.SoundEventRouter
 import cz.jarda.soundplugin.util.SafeRunner
+import cz.jarda.soundplugin.util.SoundLog
 
 /**
  * There is no dedicated "breakpoint hit" topic in the platform. We listen for debug processes
@@ -15,6 +16,7 @@ import cz.jarda.soundplugin.util.SafeRunner
 class DebugSoundListener : XDebuggerManagerListener {
     override fun processStarted(debugProcess: XDebugProcess) {
         SafeRunner.run("debug processStarted") {
+            SoundLog.trace { "debug session '${debugProcess.session.sessionName}' started; listening for pauses" }
             debugProcess.session.addSessionListener(object : XDebugSessionListener {
                 override fun sessionPaused() {
                     SafeRunner.run("debug.breakpoint.hit") {
