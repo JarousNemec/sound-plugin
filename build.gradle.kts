@@ -34,6 +34,9 @@ intellijPlatform {
     pluginConfiguration {
         ideaVersion {
             sinceBuild = "231"
+            // No upper bound: otherwise the Gradle plugin defaults until-build to "231.*"
+            // (the compile target) and newer IDEs refuse to load the plugin.
+            untilBuild = provider { null }
         }
 
         changeNotes = """
